@@ -131,9 +131,7 @@ def scan_files(db: sqlite3.Connection, root_dirs: Sequence[Path]) -> bool:
 def compute_partial_hashes(db: sqlite3.Connection) -> None:
     cur = db.cursor()
     cur.execute(COMPUTE_PARTIAL_HASH_QUERY)
-    for i, (device, inode) in enumerate(tqdm(cur.fetchall(), ncols=80)):
-        record = cur.execute(GET_PATH_QUERY, (device, inode)).fetchone()
-        (p,) = record
+    for i, (p, device, inode) in enumerate(tqdm(cur.fetchall(), ncols=80)):
         ph = partial_hash(Path(p))
         cur.execute(UPDATE_INODE_PARTIAL_HASH_QUERY, (ph, device, inode))
         if i % COMMIT_BATCH_SIZE == 0:
@@ -144,8 +142,7 @@ def compute_partial_hashes(db: sqlite3.Connection) -> None:
 def compute_full_hashes(db: sqlite3.Connection) -> None:
     cur = db.cursor()
     cur.execute(COMPUTE_FULL_HASH_QUERY)
-    for i, (device, inode) in enumerate(tqdm(cur.fetchall(), ncols=80)):
-        (p,) = cur.execute(GET_PATH_QUERY, (device, inode)).fetchone()
+    for i, (p, device, inode) in enumerate(tqdm(cur.fetchall(), ncols=80)):
         ph = full_hash(Path(p))
         cur.execute(UPDATE_INODE_FULL_HASH_QUERY, (ph, device, inode))
         if i % COMMIT_BATCH_SIZE == 0:
@@ -260,12 +257,8 @@ SET device = excluded.device, inode = excluded.inode
 WHERE device != excluded.device OR inode != excluded.inode
 """
 
-GET_PATH_QUERY = "SELECT path FROM paths WHERE device=? AND inode=? LIMIT 1"
-
-UPDATE_INODE_PARTIAL_HASH_QUERY = "UPDATE inodes SET partial_hash=? WHERE device=? AND inode=?"
-
 COMPUTE_PARTIAL_HASH_QUERY = """
-SELECT device, inode
+SELECT path, device, inode
 FROM inodes
 JOIN (
     SELECT size
@@ -274,12 +267,21 @@ JOIN (
     GROUP BY size
     HAVING COUNT(*) > 1
 ) AS t USING (size)
+JOIN (
+    SELECT path, device, inode
+    FROM (
+        SELECT path, device, inode, ROW_NUMBER() OVER (PARTITION by device, inode ORDER BY PATH) AS p
+        FROM paths
+    ) AS t1
+    WHERE p = 1
+) AS t2 USING (device, inode)
 WHERE partial_hash IS NULL
 """
-UPDATE_INODE_FULL_HASH_QUERY = "UPDATE inodes SET full_hash=? WHERE device=? AND inode=?"
+
+UPDATE_INODE_PARTIAL_HASH_QUERY = "UPDATE inodes SET partial_hash=? WHERE device=? AND inode=?"
 
 COMPUTE_FULL_HASH_QUERY = """
-SELECT device, inode
+SELECT path, device, inode
 FROM inodes
 JOIN (
     SELECT partial_hash
@@ -288,8 +290,18 @@ JOIN (
     GROUP BY partial_hash
     HAVING COUNT(*) > 1
 ) AS t USING (partial_hash)
+JOIN (
+    SELECT path, device, inode
+    FROM (
+        SELECT path, device, inode, ROW_NUMBER() OVER (PARTITION by device, inode ORDER BY PATH) AS p
+        FROM paths
+    ) AS t1
+    WHERE p = 1
+) AS t2 USING (device, inode)
 WHERE full_hash IS NULL AND size > 16384
 """
+
+UPDATE_INODE_FULL_HASH_QUERY = "UPDATE inodes SET full_hash=? WHERE device=? AND inode=?"
 
 ATTACH_REPORT_DATABASE_QUERY = "ATTACH DATABASE ? AS report"
 
