@@ -1,0 +1,66 @@
+[project]
+name = "deduper"
+version = "0.1.0"
+description = "Generate a report of duplicate files"
+authors = [
+    { name = "Renan Traba", email = "hellupline@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "tqdm>=4.67.3",
+]
+
+[tool.uv.build-backend]
+module-name = "galleryviewer"
+
+[tool.uv.pip]
+generate-hashes = true
+
+[tool.ruff]
+include = ["pyproject.toml", "src/**/*.py"]
+extend-include = ["*.ipynb"]
+line-length = 110
+indent-width = 4
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D100", # https://docs.astral.sh/ruff/rules/undocumented-public-module/
+    "D101", # https://docs.astral.sh/ruff/rules/undocumented-public-class/
+    "D102", # https://docs.astral.sh/ruff/rules/undocumented-public-method/
+    "D103", # https://docs.astral.sh/ruff/rules/undocumented-public-method/
+    "D104", # https://docs.astral.sh/ruff/rules/undocumented-public-package
+    "D105", # https://docs.astral.sh/ruff/rules/undocumented-magic-method/
+    "D106", # https://docs.astral.sh/ruff/rules/undocumented-public-nested-class/
+    "D107", # https://docs.astral.sh/ruff/rules/undocumented-public-init/
+    "D200", # https://docs.astral.sh/ruff/rules/unnecessary-multiline-docstring/
+    "D203", # https://docs.astral.sh/ruff/rules/incorrect-blank-line-before-class/
+    "D212", # https://docs.astral.sh/ruff/rules/multi-line-summary-first-line/
+    "D400", # https://docs.astral.sh/ruff/rules/missing-trailing-period/
+    "D415", # https://docs.astral.sh/ruff/rules/missing-terminal-punctuation/
+    "TD002", # https://docs.astral.sh/ruff/rules/missing-todo-author/
+    "TD003", # https://docs.astral.sh/ruff/rules/missing-todo-link/
+    "SIM108", # https://docs.astral.sh/ruff/rules/if-else-block-instead-of-if-exp/
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = []
+"**/{tests,docs,tools}/*" = []
+
+[tool.ruff.lint.pylint]
+max-args = 10
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "double"
+
+[tool.ruff.lint.isort]
+force-single-line = true
+
+[tool.ruff.format]
+exclude = ["*.pyi", "*.ipynb"]
+quote-style = "double"
+docstring-code-format = true
+
+[tool.ty.rules]
