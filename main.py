@@ -71,15 +71,15 @@ def main() -> None:
     init_db(db)
     if args.root:
         items = [item for root_dir in args.root if (item := Path(root_dir).absolute()).is_dir()]
-        print("Scanning filesystem...")
+        print("Scanning filesystem...")  # noqa: T201
         if not scan_files(db, items):
             return
     signal.signal(signal.SIGINT, _sigint_handler)
     signal.signal(signal.SIGTERM, _sigterm_handler)
     if not args.report_only:
-        print("Computing partial hashes...")
+        print("Computing partial hashes...")  # noqa: T201
         compute_partial_hashes(db)
-        print("Computing full hashes...")
+        print("Computing full hashes...")  # noqa: T201
         compute_full_hashes(db)
     print("Duplicate report:")  # noqa: T201
     report_duplicates(db, args.report_database)
