@@ -256,37 +256,39 @@ WHERE device != excluded.device OR inode != excluded.inode
 """
 
 COMPUTE_PARTIAL_HASH_QUERY = """
+WITH DuplicateSizes AS (
+    SELECT size
+    FROM inodes
+    WHERE size > 16384
+    GROUP BY size
+    HAVING COUNT(*) > 1
+)
 SELECT
     (SELECT MIN(path) FROM paths p WHERE p.device = inodes.device AND p.inode = inodes.inode) AS path,
     inodes.device,
     inodes.inode,
     inodes.size
 FROM inodes
-JOIN (
-    SELECT size
-    FROM inodes
-    WHERE size > 16384
-    GROUP BY size
-    HAVING COUNT(*) > 1
-) AS t USING (size)
-WHERE inodes.partial_hash IS NULL
+JOIN DuplicateSizes USING (size)
+WHERE partial_hash IS NULL
 """
 
 UPDATE_INODE_PARTIAL_HASH_QUERY = "UPDATE inodes SET partial_hash=? WHERE device=? AND inode=?"
 
 COMPUTE_FULL_HASH_QUERY = """
-SELECT
-    (SELECT MIN(path) FROM paths p WHERE p.device = inodes.device AND p.inode = inodes.inode) AS path,
-    inodes.device,
-    inodes.inode
-FROM inodes
-JOIN (
+WITH DuplicatePartials AS (
     SELECT partial_hash
     FROM inodes
     WHERE partial_hash IS NOT NULL
     GROUP BY partial_hash
     HAVING COUNT(*) > 1
-) AS t USING (partial_hash)
+)
+SELECT
+    (SELECT MIN(path) FROM paths p WHERE p.device = inodes.device AND p.inode = inodes.inode) AS path,
+    inodes.device,
+    inodes.inode
+FROM inodes
+JOIN DuplicatePartials USING (partial_hash)
 WHERE inodes.full_hash IS NULL AND inodes.size > 16384
 """
 
@@ -302,15 +304,16 @@ DROP_REPORT_TABLE_DUPLICATE_QUERY = "DROP TABLE IF EXISTS report.duplicates"
 
 CREATE_REPORT_TABLE_INODE_QUERY = """
 CREATE TABLE report.inodes AS
-SELECT device, inode, size, full_hash
-FROM inodes
-JOIN (
+WITH DuplicateFulls AS (
     SELECT full_hash
     FROM inodes
     WHERE full_hash IS NOT NULL
     GROUP BY full_hash
     HAVING COUNT(*) > 1
-) AS t USING (full_hash)
+)
+SELECT device, inode, size, full_hash
+FROM inodes
+JOIN DuplicateFulls USING (full_hash)
 """
 
 CREATE_REPORT_TABLE_PATH_QUERY = """
