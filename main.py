@@ -131,8 +131,8 @@ def scan_files(db: sqlite3.Connection, root_dirs: Sequence[Path]) -> bool:
 def compute_partial_hashes(db: sqlite3.Connection) -> None:
     cur = db.cursor()
     cur.execute(COMPUTE_PARTIAL_HASH_QUERY)
-    for i, (p, device, inode) in enumerate(tqdm(cur.fetchall(), ncols=80)):
-        ph = partial_hash(Path(p))
+    for i, (p, device, inode, size) in enumerate(tqdm(cur.fetchall(), ncols=80)):
+        ph = partial_hash(Path(p), size)
         cur.execute(UPDATE_INODE_PARTIAL_HASH_QUERY, (ph, device, inode))
         if i % COMMIT_BATCH_SIZE == 0:
             db.commit()
@@ -184,10 +184,9 @@ def scan_tree(root_dirs: Sequence[Path]) -> Generator[Path]:
                     yield Path(path) / entry
 
 
-def partial_hash(path: Path) -> str | None:
+def partial_hash(path: Path, size: int) -> str | None:
     h = hashlib.sha256()
     try:
-        size = path.stat().st_size
         with path.open("rb") as f:
             h.update(f.read(PARTIAL_SIZE))
             if size > PARTIAL_SIZE * 2:
@@ -204,9 +203,8 @@ def partial_hash(path: Path) -> str | None:
 def full_hash(path: Path) -> str | None:
     h = hashlib.sha256()
     try:
-        with path.open("rb", buffering=CHUNK_SIZE) as f:
-            for chunk in iter(lambda: f.read(CHUNK_SIZE), b""):
-                h.update(chunk)
+        with path.open("rb") as f:
+            return hashlib.file_digest(f, "sha256").hexdigest()
     except Exception:
         logger.exception("Failed to read file: %s", path)
         return None
@@ -258,7 +256,11 @@ WHERE device != excluded.device OR inode != excluded.inode
 """
 
 COMPUTE_PARTIAL_HASH_QUERY = """
-SELECT path, device, inode
+SELECT
+    (SELECT MIN(path) FROM paths p WHERE p.device = inodes.device AND p.inode = inodes.inode) AS path,
+    inodes.device,
+    inodes.inode,
+    inodes.size
 FROM inodes
 JOIN (
     SELECT size
@@ -267,21 +269,16 @@ JOIN (
     GROUP BY size
     HAVING COUNT(*) > 1
 ) AS t USING (size)
-JOIN (
-    SELECT path, device, inode
-    FROM (
-        SELECT path, device, inode, ROW_NUMBER() OVER (PARTITION by device, inode ORDER BY PATH) AS p
-        FROM paths
-    ) AS t1
-    WHERE p = 1
-) AS t2 USING (device, inode)
-WHERE partial_hash IS NULL
+WHERE inodes.partial_hash IS NULL
 """
 
 UPDATE_INODE_PARTIAL_HASH_QUERY = "UPDATE inodes SET partial_hash=? WHERE device=? AND inode=?"
 
 COMPUTE_FULL_HASH_QUERY = """
-SELECT path, device, inode
+SELECT
+    (SELECT MIN(path) FROM paths p WHERE p.device = inodes.device AND p.inode = inodes.inode) AS path,
+    inodes.device,
+    inodes.inode
 FROM inodes
 JOIN (
     SELECT partial_hash
@@ -290,15 +287,7 @@ JOIN (
     GROUP BY partial_hash
     HAVING COUNT(*) > 1
 ) AS t USING (partial_hash)
-JOIN (
-    SELECT path, device, inode
-    FROM (
-        SELECT path, device, inode, ROW_NUMBER() OVER (PARTITION by device, inode ORDER BY PATH) AS p
-        FROM paths
-    ) AS t1
-    WHERE p = 1
-) AS t2 USING (device, inode)
-WHERE full_hash IS NULL AND size > 16384
+WHERE inodes.full_hash IS NULL AND inodes.size > 16384
 """
 
 UPDATE_INODE_FULL_HASH_QUERY = "UPDATE inodes SET full_hash=? WHERE device=? AND inode=?"
@@ -326,12 +315,9 @@ JOIN (
 
 CREATE_REPORT_TABLE_PATH_QUERY = """
 CREATE TABLE report.paths AS
-SELECT path, device, inode
-FROM (
-    SELECT path, device, inode, ROW_NUMBER() OVER (PARTITION by device, inode ORDER BY PATH) AS p
-    FROM paths
-) AS t
-WHERE p = 1
+SELECT MIN(path) AS path, device, inode
+FROM paths
+GROUP BY device, inode
 """
 
 CREATE_REPORT_TABLE_DUPLICATE_QUERY = """
